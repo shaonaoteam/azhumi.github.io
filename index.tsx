@@ -68,22 +68,31 @@ const compressImage = (base64Str: string): Promise<string> => {
 };
 
 // --- AI 逻辑 ---
+const getEffectiveApiKey = () => {
+  const userKey = localStorage.getItem('PET_GROOMING_API_KEY');
+  return userKey || process.env.API_KEY || '';
+};
+
 const enhancePetNotes = async (rawNotes: string, petName: string): Promise<string> => {
+  const apiKey = getEffectiveApiKey();
+  if (!apiKey) {
+    throw new Error("请先点击右上角设置图标配置 API Key");
+  }
+
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-    // 使用更稳定的 gemini-flash-lite-latest 减少 503 错误
+    const ai = new GoogleGenAI({ apiKey });
+    // 使用用户指定的 gemini-3-flash-preview
     const response = await ai.models.generateContent({
-      model: 'gemini-flash-lite-latest',
+      model: 'gemini-3-flash-preview',
       contents: `你是一名宠物美容师。请润色这段笔记：宠物名字是"${petName}", 原始内容是"${rawNotes}"。要求：语气专业温馨，100字以内，并包含一条简短的居家护理建议。只返回润色后的文本。`,
     });
-    // 使用 .text 属性（不是方法）
     return response.text || rawNotes;
   } catch (e: any) { 
     console.error("AI 优化失败:", e);
-    if (e.message?.includes('503')) {
-      throw new Error("AI 服务当前较忙，请过几秒后再次尝试。");
+    if (e.message?.includes('503') || e.message?.includes('high demand')) {
+      throw new Error("Gemini 服务器目前请求量过大（503），请稍后重试。");
     }
-    return rawNotes; 
+    throw new Error(e.message || "AI 润色请求失败，请检查 API Key 是否有效。");
   }
 };
 
@@ -113,9 +122,9 @@ const PhotoUpload = ({ label, image, onUpload }: any) => {
         ) : image ? (
           <img src={image} className="w-full h-full object-cover animate-fadeIn" alt="uploaded" />
         ) : (
-          <div className="text-blue-500 flex flex-col items-center">
+          <div className="text-blue-500 flex flex-col items-center p-4 text-center">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-            <span className="font-bold text-[10px]">拍摄或选取照片</span>
+            <span className="font-bold text-[10px]">拍照或上传</span>
           </div>
         )}
       </label>
@@ -136,7 +145,7 @@ const ReportPreview = ({ report, template, containerRef }: any) => (
         </div>
       </div>
       
-      <div className="bg-white p-5 rounded-3xl shadow-sm mb-8 grid grid-cols-2 gap-4">
+      <div className="bg-white p-5 rounded-3xl shadow-sm mb-8 grid grid-cols-2 gap-4 border border-slate-50">
         <div><p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-1">宝贝姓名</p><p className="font-bold text-slate-800">{report.pet.name || '可爱宝贝'}</p></div>
         <div><p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-1">主理美容师</p><p className="font-bold text-slate-800">{report.groomerName || '-'}</p></div>
       </div>
@@ -182,6 +191,8 @@ const ReportPreview = ({ report, template, containerRef }: any) => (
 // --- 主应用 ---
 const App: React.FC = () => {
   const [step, setStep] = useState(1);
+  const [showSettings, setShowSettings] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState(localStorage.getItem('PET_GROOMING_API_KEY') || "");
   const [report, setReport] = useState<GroomingReport>({
     pet: { name: '', breed: '', weight: '' },
     services: [], notes: '', date: new Date().toISOString().split('T')[0],
@@ -192,6 +203,12 @@ const App: React.FC = () => {
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const reportRef = useRef<HTMLDivElement>(null);
 
+  const handleSaveApiKey = () => {
+    localStorage.setItem('PET_GROOMING_API_KEY', apiKeyInput.trim());
+    setShowSettings(false);
+    alert("设置已保存");
+  };
+
   const handleEnhance = async () => {
     if (!report.notes) return;
     setIsEnhancing(true);
@@ -199,7 +216,7 @@ const App: React.FC = () => {
       const enhanced = await enhancePetNotes(report.notes, report.pet.name || '小宝贝');
       setReport({ ...report, aiEnhancedNotes: enhanced });
     } catch (e: any) {
-      alert(e.message || "润色失败，请稍后重试。");
+      alert(e.message);
     }
     setIsEnhancing(false);
   };
@@ -226,10 +243,18 @@ const App: React.FC = () => {
         <h1 className="font-black text-slate-900 text-xl flex items-center">
           <span className="mr-2">🐾</span> 宠爱洗护报告
         </h1>
-        <div className="flex space-x-1.5">
-          {[1, 2, 3].map(s => (
-            <div key={s} className={`h-1.5 rounded-full transition-all duration-300 ${step === s ? 'w-8 bg-blue-600' : 'w-2 bg-slate-200'}`} />
-          ))}
+        <div className="flex items-center space-x-4">
+          <button onClick={() => setShowSettings(true)} className="p-2 text-slate-400 hover:text-blue-600 active:scale-90 transition-all">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
+          <div className="flex space-x-1.5">
+            {[1, 2, 3].map(s => (
+              <div key={s} className={`h-1.5 rounded-full transition-all duration-300 ${step === s ? 'w-8 bg-blue-600' : 'w-2 bg-slate-200'}`} />
+            ))}
+          </div>
         </div>
       </header>
 
@@ -277,7 +302,7 @@ const App: React.FC = () => {
               </div>
               <textarea className="w-full p-5 bg-slate-50 rounded-2xl outline-none min-h-[160px] text-base focus:ring-4 ring-blue-500/5 transition-all border border-transparent focus:border-blue-100" placeholder="在这里输入洗护心得或建议..." value={report.notes} onChange={e => setReport({...report, notes: e.target.value})} />
               {report.aiEnhancedNotes && (
-                <div className="mt-5 p-5 bg-blue-50/50 rounded-2xl text-[13px] italic text-blue-900 border border-blue-100 leading-relaxed relative animate-fadeIn">
+                <div className="mt-5 p-5 bg-blue-50/50 rounded-2xl text-[13px] italic text-blue-900 border border-blue-100 leading-relaxed relative animate-fadeIn shadow-sm">
                    <div className="absolute -top-2 left-5 bg-blue-600 text-white text-[8px] px-2 py-0.5 rounded-full font-black">AI 润色预览</div>
                    "{report.aiEnhancedNotes}"
                 </div>
@@ -288,12 +313,14 @@ const App: React.FC = () => {
 
         {step === 3 && (
           <div className="space-y-6 animate-fadeIn">
-            <div className="flex space-x-2 overflow-x-auto no-scrollbar py-2">
+            <div className="flex space-x-2 overflow-x-auto no-scrollbar py-2 px-1">
               {REPORT_TEMPLATES.map(t => (
                 <button key={t.id} onClick={() => setReport({...report, templateId: t.id})} className={`flex-shrink-0 px-6 py-3 rounded-full text-[11px] font-black border-2 transition-all ${report.templateId === t.id ? 'bg-slate-900 border-slate-900 text-white shadow-xl translate-y-[-2px]' : 'bg-white border-slate-100 text-slate-400'}`}>{t.name}</button>
               ))}
             </div>
-            <ReportPreview report={report} template={REPORT_TEMPLATES.find(x => x.id === report.templateId)} containerRef={reportRef} />
+            <div className="px-1">
+              <ReportPreview report={report} template={REPORT_TEMPLATES.find(x => x.id === report.templateId)} containerRef={reportRef} />
+            </div>
           </div>
         )}
       </main>
@@ -304,6 +331,27 @@ const App: React.FC = () => {
           {isGenerating ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-3" /> : (step < 3 ? '下一步' : '导出精美报告')}
         </button>
       </footer>
+
+      {/* API Key 设置模态框 */}
+      {showSettings && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl">
+            <h3 className="text-xl font-black text-slate-900 mb-2">API 设置</h3>
+            <p className="text-xs text-slate-400 mb-6">请输入您的 Gemini API Key。该 Key 将保存在本地浏览器中。</p>
+            <input 
+              type="password"
+              className="w-full p-5 bg-slate-50 rounded-2xl outline-none focus:ring-4 ring-blue-500/10 border border-transparent focus:border-blue-100 text-sm mb-6"
+              placeholder="在这里粘贴您的 API Key..."
+              value={apiKeyInput}
+              onChange={e => setApiKeyInput(e.target.value)}
+            />
+            <div className="flex space-x-3">
+              <button onClick={() => setShowSettings(false)} className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black text-sm active:scale-95">取消</button>
+              <button onClick={handleSaveApiKey} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black text-sm shadow-lg shadow-blue-100 active:scale-95">保存设置</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {previewImage && (
         <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center p-8 animate-fadeIn">
