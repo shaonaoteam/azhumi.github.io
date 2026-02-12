@@ -260,7 +260,7 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-slate-50 flex flex-col max-w-2xl mx-auto shadow-2xl relative">
       <header className="bg-white/95 backdrop-blur-md px-6 py-5 border-b sticky top-0 z-40 flex justify-between items-center">
         <h1 className="font-black text-slate-900 text-xl flex items-center">
-          <span className="mr-2">🐾</span> 宠爱洗护报告
+          <span className="mr-2">🐾</span> A猪咪宠物洗护报告
         </h1>
         <div className="flex items-center space-x-4">
           <button onClick={() => setShowSettings(true)} className="p-2 text-slate-400 hover:text-blue-600 active:scale-90 transition-all">
