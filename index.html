@@ -5,10 +5,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>宠物洗护报告生成器</title>
+    <!-- 使用 Data URI 修复 favicon 404 错误 -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>">
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet" crossorigin="anonymous">
     
-    <!-- 使用 Babel 在浏览器端转译 TSX，解决 GitHub Pages 的 MIME 类型限制 -->
+    <!-- Babel standalone 用于在浏览器中实时转译代码 -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <style>
@@ -51,7 +54,10 @@
 <body>
     <div id="root"></div>
     
-    <!-- 使用 text/babel 和 data-type="module" 让 Babel 处理 TSX 并保持 ESM 特性 -->
-    <script type="text/babel" data-type="module" data-presets="typescript,react" src="./index.tsx"></script>
+    <!-- 
+      重要：移除 data-type="module"，让 Babel 手动 fetch index.tsx。
+      这能解决 GitHub Pages 的 application/octet-stream MIME 类型限制问题。
+    -->
+    <script type="text/babel" data-presets="typescript,react" src="./index.tsx"></script>
 </body>
 </html>
