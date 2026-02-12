@@ -76,7 +76,7 @@ const getEffectiveApiKey = () => {
 const enhancePetNotes = async (rawNotes: string, petName: string): Promise<string> => {
   const apiKey = getEffectiveApiKey();
   if (!apiKey) {
-    throw new Error("请先点击右上角设置图标配置 API Key");
+    throw new Error("请先配置 API Key");
   }
 
   try {
@@ -211,6 +211,15 @@ const App: React.FC = () => {
 
   const handleEnhance = async () => {
     if (!report.notes) return;
+
+    // 检查 API Key 是否配置
+    const apiKey = getEffectiveApiKey();
+    if (!apiKey) {
+      alert("为了使用 AI 润色功能，请先配置您的 Gemini API Key。");
+      setShowSettings(true); // 自动打开设置界面
+      return;
+    }
+
     setIsEnhancing(true);
     try {
       const enhanced = await enhancePetNotes(report.notes, report.pet.name || '小宝贝');
