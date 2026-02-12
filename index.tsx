@@ -57,27 +57,21 @@ const DEFAULT_SERVICES: GroomingService[] = [
   { id: '7', name: '去死毛', checked: false }, { id: '8', name: 'SPA按摩', checked: false },
 ];
 
-// --- AI 服务 ---
-class GeminiService {
-  private ai: any;
-  constructor() {
-    // 环境变量由系统注入
-    this.ai = new GoogleGenAI({ apiKey: (window as any).process?.env?.API_KEY || '' });
+// --- AI 服务 (修复了 API 初始化时机) ---
+const enhancePetNotes = async (rawNotes: string, petName: string): Promise<string> => {
+  try {
+    // 规范：在发起请求前实例化 GoogleGenAI
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `你是一名宠物美容师。请润色这段笔记：宠物名字是"${petName}", 原始笔记内容是"${rawNotes}"。要求：语气专业温馨，字数100字以内，并包含一条简短的居家护理建议。只返回润色后的文本。`,
+    });
+    return response.text || rawNotes;
+  } catch (e) { 
+    console.error("AI 优化失败:", e);
+    return rawNotes; 
   }
-  async enhanceNotes(rawNotes: string, petName: string): Promise<string> {
-    try {
-      const response = await this.ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `你是一名宠物美容师。润色这段笔记：宠物:${petName}, 笔记:${rawNotes}。要求专业温馨，100字内。`,
-      });
-      return response.text || rawNotes;
-    } catch (e) { 
-      console.error("AI Error", e);
-      return rawNotes; 
-    }
-  }
-}
-const gemini = new GeminiService();
+};
 
 // --- UI 组件 ---
 const PhotoUpload = ({ label, image, onUpload }: any) => {
@@ -94,7 +88,7 @@ const PhotoUpload = ({ label, image, onUpload }: any) => {
       <label className="relative w-full aspect-square bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center cursor-pointer overflow-hidden transition-all active:scale-[0.98]">
         <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileChange} />
         {image ? (
-          <img src={image} className="w-full h-full object-cover" />
+          <img src={image} className="w-full h-full object-cover animate-fadeIn" />
         ) : (
           <div className="text-blue-500 flex flex-col items-center">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -120,8 +114,8 @@ const ReportPreview = ({ report, template, containerRef }: any) => (
       </div>
       
       <div className="bg-white p-4 rounded-2xl shadow-sm mb-6 grid grid-cols-2 gap-4">
-        <div><p className="text-[10px] text-slate-400 uppercase">宠物姓名</p><p className="font-bold text-slate-800">{report.pet.name || '小可爱'}</p></div>
-        <div><p className="text-[10px] text-slate-400 uppercase">美容师</p><p className="font-bold text-slate-800">{report.groomerName || '-'}</p></div>
+        <div><p className="text-[10px] text-slate-400 uppercase font-bold">宠物姓名</p><p className="font-bold text-slate-800">{report.pet.name || '小可爱'}</p></div>
+        <div><p className="text-[10px] text-slate-400 uppercase font-bold">美容师</p><p className="font-bold text-slate-800">{report.groomerName || '-'}</p></div>
       </div>
 
       <div className="grid grid-cols-2 gap-4 mb-6">
@@ -142,15 +136,21 @@ const ReportPreview = ({ report, template, containerRef }: any) => (
       <div className="mb-6">
         <p className="text-[10px] text-slate-400 uppercase mb-2 font-bold">服务项目</p>
         <div className="flex flex-wrap gap-2">
-          {report.services.map((s: string, i: number) => (
-            <span key={i} className="px-3 py-1 rounded-full text-[10px] font-bold" style={{ backgroundColor: template.primaryColor, color: '#fff' }}>{s}</span>
-          ))}
+          {report.services.length > 0 ? (
+            report.services.map((s: string, i: number) => (
+              <span key={i} className="px-3 py-1 rounded-full text-[10px] font-bold" style={{ backgroundColor: template.primaryColor, color: '#fff' }}>{s}</span>
+            ))
+          ) : (
+            <span className="text-[10px] text-slate-300 italic">暂未录入项目</span>
+          )}
         </div>
       </div>
 
       <div className="p-4 bg-white rounded-2xl border-l-4 shadow-sm" style={{ borderColor: template.primaryColor }}>
-        <p className="text-xs font-bold text-slate-400 mb-1 uppercase">美容师点评</p>
-        <p className="text-sm italic text-slate-700 leading-relaxed">"{report.aiEnhancedNotes || report.notes || '宝贝今天非常配合，洗完香喷喷的！'}"</p>
+        <p className="text-xs font-bold text-slate-400 mb-1 uppercase">洗护总结</p>
+        <p className="text-sm italic text-slate-700 leading-relaxed font-medium">
+          "{report.aiEnhancedNotes || report.notes || '宝贝今天非常配合，洗完香喷喷的！'}"
+        </p>
       </div>
     </div>
   </div>
@@ -172,7 +172,7 @@ const App: React.FC = () => {
   const handleEnhance = async () => {
     if (!report.notes) return;
     setIsEnhancing(true);
-    const enhanced = await gemini.enhanceNotes(report.notes, report.pet.name || '小可爱');
+    const enhanced = await enhancePetNotes(report.notes, report.pet.name || '小可爱');
     setReport({ ...report, aiEnhancedNotes: enhanced });
     setIsEnhancing(false);
   };
@@ -181,11 +181,18 @@ const App: React.FC = () => {
     if (!reportRef.current) return;
     setIsGenerating(true);
     try {
+      // 给 DOM 渲染留一点反应时间
       await new Promise(r => setTimeout(r, 600));
-      const dataUrl = await htmlToImage.toPng(reportRef.current, { pixelRatio: 2, cacheBust: true });
+      // 导出高清图
+      const dataUrl = await htmlToImage.toPng(reportRef.current, { 
+        pixelRatio: 2, 
+        cacheBust: true,
+        style: { transform: 'scale(1)', transformOrigin: 'top left' }
+      });
       setPreviewImage(dataUrl);
     } catch (e) { 
-      alert('生成报告失败，请尝试截图保存或重试。');
+      console.error(e);
+      alert('生成预览失败，建议您先尝试截图。');
     }
     setIsGenerating(false);
   };
@@ -193,10 +200,10 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col max-w-2xl mx-auto shadow-xl relative overflow-x-hidden">
       <header className="bg-white/90 backdrop-blur-md px-4 py-4 border-b sticky top-0 z-40 flex justify-between items-center">
-        <h1 className="font-bold text-slate-800">爱宠洗护报告</h1>
+        <h1 className="font-bold text-slate-800 tracking-tight">🐾 爱宠洗护记录</h1>
         <div className="flex space-x-1">
           {[1, 2, 3].map(s => (
-            <div key={s} className={`h-1.5 rounded-full transition-all ${step === s ? 'w-6 bg-blue-600' : 'w-2 bg-slate-200'}`} />
+            <div key={s} className={`h-1.5 rounded-full transition-all duration-300 ${step === s ? 'w-6 bg-blue-600' : 'w-2 bg-slate-200'}`} />
           ))}
         </div>
       </header>
@@ -204,28 +211,32 @@ const App: React.FC = () => {
       <main className="flex-1 p-6 pb-32 overflow-y-auto no-scrollbar">
         {step === 1 && (
           <div className="space-y-6 animate-fadeIn">
-            <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
-              <h2 className="text-sm font-bold text-slate-800 mb-4">基本信息</h2>
+            <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+              <h2 className="text-sm font-bold text-slate-800 mb-4 flex items-center">
+                <span className="w-1 h-4 bg-blue-600 rounded-full mr-2"></span>基本资料
+              </h2>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 ml-1">宠物姓名</label>
-                  <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 ring-blue-500/10" placeholder="名字" value={report.pet.name} onChange={e => setReport({...report, pet: {...report.pet, name: e.target.value}})} />
+                  <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 ring-blue-500/10 border border-transparent focus:border-blue-500/20" placeholder="名字" value={report.pet.name} onChange={e => setReport({...report, pet: {...report.pet, name: e.target.value}})} />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 ml-1">美容师</label>
-                  <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 ring-blue-500/10" placeholder="称呼" value={report.groomerName} onChange={e => setReport({...report, groomerName: e.target.value})} />
+                  <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 ring-blue-500/10 border border-transparent focus:border-blue-500/20" placeholder="您的称呼" value={report.groomerName} onChange={e => setReport({...report, groomerName: e.target.value})} />
                 </div>
               </div>
             </div>
             
-            <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
-              <h2 className="text-sm font-bold text-slate-800 mb-4">洗护项目</h2>
+            <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+              <h2 className="text-sm font-bold text-slate-800 mb-4 flex items-center">
+                <span className="w-1 h-4 bg-blue-600 rounded-full mr-2"></span>服务项目
+              </h2>
               <div className="grid grid-cols-2 gap-2">
                 {DEFAULT_SERVICES.map(s => (
                   <button key={s.id} onClick={() => {
                     const news = report.services.includes(s.name) ? report.services.filter(x => x !== s.name) : [...report.services, s.name];
                     setReport({...report, services: news});
-                  }} className={`p-4 rounded-2xl text-xs font-bold transition-all border ${report.services.includes(s.name) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-100'}`}>{s.name}</button>
+                  }} className={`p-4 rounded-2xl text-xs font-bold transition-all border active:scale-95 ${report.services.includes(s.name) ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-100' : 'bg-white text-slate-500 border-slate-100'}`}>{s.name}</button>
                 ))}
               </div>
             </div>
@@ -234,31 +245,36 @@ const App: React.FC = () => {
 
         {step === 2 && (
           <div className="space-y-6 animate-fadeIn">
-            <div className="grid grid-cols-2 gap-4 bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
+            <div className="grid grid-cols-2 gap-4 bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
               <PhotoUpload label="洗护前 (Before)" image={report.photos.before} onUpload={(img: string) => setReport({...report, photos: {...report.photos, before: img}})} />
               <PhotoUpload label="洗护后 (After)" image={report.photos.after} onUpload={(img: string) => setReport({...report, photos: {...report.photos, after: img}})} />
             </div>
-            <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
-              <div className="flex justify-between items-center mb-3">
-                <h2 className="text-sm font-bold text-slate-800">美容师点评</h2>
-                <button onClick={handleEnhance} disabled={!report.notes || isEnhancing} className="text-[10px] bg-blue-600 text-white px-3 py-1.5 rounded-full font-bold disabled:bg-slate-200">
-                  {isEnhancing ? 'AI 润色中...' : '✨ AI 优化文字'}
+            <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-sm font-bold text-slate-800">洗护日志</h2>
+                <button onClick={handleEnhance} disabled={!report.notes || isEnhancing} className="text-[10px] bg-blue-600 text-white px-4 py-2 rounded-full font-bold disabled:bg-slate-200 transition-all active:scale-95 shadow-lg shadow-blue-100">
+                  {isEnhancing ? '✨ AI 优化中' : '✨ AI 智能润色'}
                 </button>
               </div>
-              <textarea className="w-full p-4 bg-slate-50 rounded-2xl outline-none min-h-[120px] text-sm" placeholder="写点宠物今天的表现吧..." value={report.notes} onChange={e => setReport({...report, notes: e.target.value})} />
-              {report.aiEnhancedNotes && <div className="mt-3 p-4 bg-blue-50 rounded-2xl text-xs italic text-blue-800 border border-blue-100">{report.aiEnhancedNotes}</div>}
+              <textarea className="w-full p-4 bg-slate-50 rounded-2xl outline-none min-h-[140px] text-sm focus:ring-2 ring-blue-500/10 border border-transparent focus:border-blue-500/20" placeholder="比如：今天很乖，修剪指甲时稍微有点紧张..." value={report.notes} onChange={e => setReport({...report, notes: e.target.value})} />
+              {report.aiEnhancedNotes && (
+                <div className="mt-4 p-4 bg-blue-50 rounded-2xl text-xs italic text-blue-800 border border-blue-100 leading-relaxed relative">
+                   <div className="absolute -top-2 left-4 bg-blue-600 text-white text-[8px] px-2 py-0.5 rounded-full font-bold">AI 优化结果</div>
+                   {report.aiEnhancedNotes}
+                </div>
+              )}
             </div>
           </div>
         )}
 
         {step === 3 && (
           <div className="space-y-6 animate-fadeIn">
-            <div className="flex space-x-2 overflow-x-auto no-scrollbar py-2">
+            <div className="flex space-x-2 overflow-x-auto no-scrollbar py-2 px-1">
               {REPORT_TEMPLATES.map(t => (
-                <button key={t.id} onClick={() => setReport({...report, templateId: t.id})} className={`flex-shrink-0 px-5 py-2.5 rounded-full text-xs font-bold border-2 transition-all ${report.templateId === t.id ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-500'}`}>{t.name}</button>
+                <button key={t.id} onClick={() => setReport({...report, templateId: t.id})} className={`flex-shrink-0 px-6 py-3 rounded-full text-xs font-bold border-2 transition-all active:scale-95 ${report.templateId === t.id ? 'bg-slate-800 border-slate-800 text-white shadow-lg' : 'bg-white border-slate-100 text-slate-500'}`}>{t.name}</button>
               ))}
             </div>
-            <div className="w-full flex justify-center px-2">
+            <div className="w-full flex justify-center px-1">
               <ReportPreview report={report} template={REPORT_TEMPLATES.find(x => x.id === report.templateId)} containerRef={reportRef} />
             </div>
           </div>
@@ -267,22 +283,22 @@ const App: React.FC = () => {
 
       <footer className="fixed bottom-0 left-0 right-0 max-w-2xl mx-auto p-4 pb-8 bg-white/80 backdrop-blur-xl border-t flex space-x-3 z-50">
         {step > 1 && <button onClick={() => setStep(step - 1)} className="px-8 py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold active:scale-95 transition-all">返回</button>}
-        <button onClick={() => step < 3 ? setStep(step + 1) : generate()} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-100 active:scale-[0.98] transition-all">
-          {isGenerating ? '正在渲染图片...' : (step < 3 ? '继续' : '预览并保存')}
+        <button onClick={() => step < 3 ? setStep(step + 1) : generate()} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-xl shadow-blue-100 active:scale-[0.98] transition-all">
+          {isGenerating ? '正在渲染高清图片...' : (step < 3 ? '下一步' : '预览报告')}
         </button>
       </footer>
 
       {previewImage && (
         <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center p-6 no-select animate-fadeIn">
           <div className="w-full max-w-sm flex flex-col items-center">
-            <p className="text-white text-sm font-bold mb-6 flex items-center">
+            <p className="text-white text-sm font-bold mb-6 flex items-center bg-green-500/20 px-4 py-2 rounded-full border border-green-500/30">
                <span className="bg-green-500 w-2 h-2 rounded-full mr-2 animate-pulse"></span>
-               制作完成！长按下方图片保存
+               生成成功！长按图片保存
             </p>
-            <div className="bg-white rounded-3xl overflow-hidden shadow-2xl mb-8 w-full">
-              <img src={previewImage} className="w-full h-auto" />
+            <div className="bg-white rounded-3xl overflow-hidden shadow-2xl mb-8 w-full border-4 border-white/10">
+              <img src={previewImage} className="w-full h-auto" alt="Final Report" />
             </div>
-            <button onClick={() => setPreviewImage(null)} className="w-full py-4 bg-white text-slate-900 rounded-2xl font-bold text-sm shadow-xl">返回编辑</button>
+            <button onClick={() => setPreviewImage(null)} className="w-full py-4 bg-white text-slate-900 rounded-2xl font-bold text-sm shadow-xl active:scale-95 transition-all">返回编辑</button>
           </div>
         </div>
       )}
