@@ -27,7 +27,6 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ label, image, onUpload
         <input 
           type="file" 
           accept="image/*" 
-          capture="environment" 
           className="hidden" 
           onChange={handleFileChange}
         />

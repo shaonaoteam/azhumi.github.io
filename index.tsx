@@ -57,10 +57,9 @@ const DEFAULT_SERVICES: GroomingService[] = [
   { id: '7', name: '去死毛', checked: false }, { id: '8', name: 'SPA按摩', checked: false },
 ];
 
-// --- AI 服务 (修复了 API 初始化时机) ---
+// --- AI 服务 ---
 const enhancePetNotes = async (rawNotes: string, petName: string): Promise<string> => {
   try {
-    // 规范：在发起请求前实例化 GoogleGenAI
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -86,15 +85,16 @@ const PhotoUpload = ({ label, image, onUpload }: any) => {
     <div className="flex flex-col items-center w-full">
       <span className="text-[10px] font-bold text-slate-400 mb-2 uppercase tracking-wider">{label}</span>
       <label className="relative w-full aspect-square bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center cursor-pointer overflow-hidden transition-all active:scale-[0.98]">
-        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileChange} />
+        {/* 移除了 capture="environment"，这样系统会弹出选择菜单（拍照或选择相册） */}
+        <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
         {image ? (
-          <img src={image} className="w-full h-full object-cover animate-fadeIn" />
+          <img src={image} className="w-full h-full object-cover" />
         ) : (
           <div className="text-blue-500 flex flex-col items-center">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
             </svg>
-            <span className="font-bold text-[10px]">点击拍照</span>
+            <span className="font-bold text-[10px]">点击上传</span>
           </div>
         )}
       </label>
@@ -122,13 +122,13 @@ const ReportPreview = ({ report, template, containerRef }: any) => (
         {report.photos.before && (
           <div className="text-center">
             <p className="text-[9px] mb-1 font-bold text-slate-400">BEFORE / 洗前</p>
-            <img src={report.photos.before} className="rounded-xl shadow-md aspect-square object-cover w-full border-2 border-white" />
+            <img src={report.photos.before} crossOrigin="anonymous" className="rounded-xl shadow-md aspect-square object-cover w-full border-2 border-white" />
           </div>
         )}
         {report.photos.after && (
           <div className="text-center">
             <p className="text-[9px] mb-1 font-bold text-slate-400">AFTER / 洗后</p>
-            <img src={report.photos.after} className="rounded-xl shadow-md aspect-square object-cover w-full border-2 border-white" />
+            <img src={report.photos.after} crossOrigin="anonymous" className="rounded-xl shadow-md aspect-square object-cover w-full border-2 border-white" />
           </div>
         )}
       </div>
@@ -181,18 +181,27 @@ const App: React.FC = () => {
     if (!reportRef.current) return;
     setIsGenerating(true);
     try {
-      // 给 DOM 渲染留一点反应时间
-      await new Promise(r => setTimeout(r, 600));
-      // 导出高清图
-      const dataUrl = await htmlToImage.toPng(reportRef.current, { 
+      const node = reportRef.current;
+      
+      // iOS Safari 核心修复：
+      // 1. 先进行一次“静默”渲染，强制浏览器完成图片的纹理加载
+      await htmlToImage.toPng(node);
+      
+      // 2. 增加延迟等待 iOS 渲染引擎完成绘制
+      await new Promise(r => setTimeout(r, 800));
+      
+      // 3. 执行最终转换，降低 pixelRatio 至 2（1.5-2 是 iOS 上的安全范围）
+      const dataUrl = await htmlToImage.toPng(node, { 
         pixelRatio: 2, 
         cacheBust: true,
-        style: { transform: 'scale(1)', transformOrigin: 'top left' }
+        backgroundColor: '#ffffff',
+        fontEmbedCSS: '', // 避免字体解析在 Safari 上引起中断
       });
+      
       setPreviewImage(dataUrl);
     } catch (e) { 
-      console.error(e);
-      alert('生成预览失败，建议您先尝试截图。');
+      console.error("生成失败:", e);
+      alert('在当前浏览器上生成图片遇到困难，请尝试长按页面截图保存。');
     }
     setIsGenerating(false);
   };
@@ -291,9 +300,8 @@ const App: React.FC = () => {
       {previewImage && (
         <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center p-6 no-select animate-fadeIn">
           <div className="w-full max-w-sm flex flex-col items-center">
-            <p className="text-white text-sm font-bold mb-6 flex items-center bg-green-500/20 px-4 py-2 rounded-full border border-green-500/30">
-               <span className="bg-green-500 w-2 h-2 rounded-full mr-2 animate-pulse"></span>
-               生成成功！长按图片保存
+            <p className="text-white text-sm font-bold mb-6 flex items-center bg-green-500/20 px-4 py-2 rounded-full border border-green-500/30 text-center">
+               制作完成！长按下方图片保存
             </p>
             <div className="bg-white rounded-3xl overflow-hidden shadow-2xl mb-8 w-full border-4 border-white/10">
               <img src={previewImage} className="w-full h-auto" alt="Final Report" />

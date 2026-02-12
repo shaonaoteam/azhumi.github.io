@@ -56,13 +56,17 @@ const App: React.FC = () => {
     if (!reportRef.current) return;
     setIsGenerating(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 400));
+      const node = reportRef.current;
       
-      const dataUrl = await htmlToImage.toPng(reportRef.current, { 
-        quality: 1, 
-        pixelRatio: 3, 
+      // iOS Safari 预热渲染
+      await htmlToImage.toPng(node);
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      const dataUrl = await htmlToImage.toPng(node, { 
+        pixelRatio: 2, // 限制像素比以防 iOS 崩溃
         cacheBust: true,
         fontEmbedCSS: '', 
+        backgroundColor: '#ffffff'
       });
       
       setPreviewImage(dataUrl);
@@ -270,11 +274,11 @@ const App: React.FC = () => {
           <div className="absolute top-6 right-6">
             <button onClick={() => setPreviewImage(null)} className="p-3 bg-white/10 rounded-full text-white"><svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
           </div>
-          <p className="text-white text-sm font-bold mb-4">✨ 生成成功！长按下方图片保存至相册</p>
+          <p className="text-white text-sm font-bold mb-4 text-center">✨ 生成成功！长按下方图片保存至相册</p>
           <div className="bg-white rounded-2xl overflow-hidden shadow-2xl max-h-[75vh] w-full max-w-sm">
             <img src={previewImage} alt="Report Preview" className="w-full h-auto object-contain" />
           </div>
-          <button onClick={() => setPreviewImage(null)} className="mt-8 px-10 py-3 bg-white text-slate-900 font-bold rounded-full">完成</button>
+          <button onClick={() => setPreviewImage(null)} className="mt-8 px-10 py-3 bg-white text-slate-900 font-bold rounded-full active:scale-95">完成</button>
         </div>
       )}
     </div>
