@@ -1,0 +1,7 @@
+{
+  "name": "PetGrooming Report Pro",
+  "description": "A professional tool for pet groomers to record grooming details, upload photos, and generate beautiful sharing reports using AI enhancement.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
