@@ -1,10 +1,10 @@
 
-import React, { useState, useRef, useEffect } from 'react';
-import { GroomingReport, PetInfo, GroomingService, ReportTemplate } from './types';
-import { DEFAULT_SERVICES, REPORT_TEMPLATES } from './constants';
-import { PhotoUpload } from './components/PhotoUpload';
-import { ReportPreview } from './components/ReportPreview';
-import { geminiService } from './services/geminiService';
+import React, { useState, useRef } from 'react';
+import { GroomingReport, PetInfo, GroomingService } from './types.ts';
+import { DEFAULT_SERVICES, REPORT_TEMPLATES } from './constants.ts';
+import { PhotoUpload } from './components/PhotoUpload.tsx';
+import { ReportPreview } from './components/ReportPreview.tsx';
+import { geminiService } from './services/geminiService.ts';
 
 // Import html-to-image
 import * as htmlToImage from 'html-to-image';
@@ -56,19 +56,17 @@ const App: React.FC = () => {
     if (!reportRef.current) return;
     setIsGenerating(true);
     try {
-      // Small buffer for rendering
       await new Promise(resolve => setTimeout(resolve, 400));
       
       const dataUrl = await htmlToImage.toPng(reportRef.current, { 
         quality: 1, 
-        pixelRatio: 3, // Higher pixel ratio for better clarity on Retina displays
+        pixelRatio: 3, 
         cacheBust: true,
         fontEmbedCSS: '', 
       });
       
       setPreviewImage(dataUrl);
       
-      // Auto-trigger download where supported
       const link = document.createElement('a');
       link.download = `洗护报告-${report.pet.name || '宝贝'}.png`;
       link.href = dataUrl;
@@ -83,7 +81,6 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col max-w-2xl mx-auto shadow-xl relative overflow-x-hidden">
-      {/* Header */}
       <header className="bg-white/95 backdrop-blur-md px-4 sm:px-6 py-4 border-b flex justify-between items-center sticky top-0 z-40">
         <h1 className="text-lg font-bold text-slate-800 tracking-tight">爱宠洗护报告</h1>
         <div className="flex space-x-1.5 items-center">
@@ -240,7 +237,6 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* Footer Actions */}
       <footer className="bg-white/80 backdrop-blur-xl p-4 sm:p-6 border-t fixed bottom-0 left-0 right-0 max-w-2xl mx-auto z-50" style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}>
         <div className="flex space-x-3 max-w-md mx-auto">
           {activeStep > 1 && (
