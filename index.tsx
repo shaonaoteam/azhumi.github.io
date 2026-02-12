@@ -70,18 +70,28 @@ const compressImage = (base64Str: string): Promise<string> => {
 // --- AI 逻辑 ---
 const getEffectiveApiKey = () => {
   const userKey = localStorage.getItem('PET_GROOMING_API_KEY');
-  return userKey || process.env.API_KEY || '';
+  if (userKey) return userKey;
+
+  // 安全检查 process 环境，防止在浏览器环境下报错
+  try {
+    if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+      return process.env.API_KEY;
+    }
+  } catch (e) {
+    // 忽略环境检查错误
+  }
+  return '';
 };
 
 const enhancePetNotes = async (rawNotes: string, petName: string): Promise<string> => {
   const apiKey = getEffectiveApiKey();
   if (!apiKey) {
+    // 逻辑已在 handleEnhance 中处理，这里作为最后防线
     throw new Error("请先配置 API Key");
   }
 
   try {
     const ai = new GoogleGenAI({ apiKey });
-    // 使用用户指定的 gemini-3-flash-preview
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `你是一名宠物美容师。请润色这段笔记：宠物名字是"${petName}", 原始内容是"${rawNotes}"。要求：语气专业温馨，100字以内，并包含一条简短的居家护理建议。只返回润色后的文本。`,
@@ -212,7 +222,7 @@ const App: React.FC = () => {
   const handleEnhance = async () => {
     if (!report.notes) return;
 
-    // 检查 API Key 是否配置
+    // 先获取 Key，安全检查
     const apiKey = getEffectiveApiKey();
     if (!apiKey) {
       alert("为了使用 AI 润色功能，请先配置您的 Gemini API Key。");
@@ -324,7 +334,7 @@ const App: React.FC = () => {
           <div className="space-y-6 animate-fadeIn">
             <div className="flex space-x-2 overflow-x-auto no-scrollbar py-2 px-1">
               {REPORT_TEMPLATES.map(t => (
-                <button key={t.id} onClick={() => setReport({...report, templateId: t.id})} className={`flex-shrink-0 px-6 py-3 rounded-full text-[11px] font-black border-2 transition-all ${report.templateId === t.id ? 'bg-slate-900 border-slate-900 text-white shadow-xl translate-y-[-2px]' : 'bg-white border-slate-100 text-slate-400'}`}>{t.name}</button>
+                <button key={t.id} onClick={() => setReport({...report, templateId: t.id})} className={`flex-shrink-0 px-6 py-3 rounded-full text-[11px] font-black border-2 transition-all ${report.templateId === t.id ? 'bg-slate-900 border-slate-900 text-white shadow-xl translate-y-[-2px]' : 'bg-white border-slate-100 text-slate-500 hover:border-slate-300'}`}>{t.name}</button>
               ))}
             </div>
             <div className="px-1">
@@ -364,11 +374,14 @@ const App: React.FC = () => {
 
       {previewImage && (
         <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center p-8 animate-fadeIn">
+          <div className="absolute top-6 right-6">
+            <button onClick={() => setPreviewImage(null)} className="p-3 bg-white/10 rounded-full text-white active:scale-90 transition-all"><svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+          </div>
           <p className="text-white text-xs font-black mb-6 text-center bg-blue-500/20 px-6 py-3 rounded-full border border-blue-500/30">✨ 报告已就绪！长按保存图片分享</p>
           <div className="bg-white rounded-[2rem] overflow-hidden shadow-2xl mb-8 w-full max-h-[70vh] overflow-y-auto border-4 border-white/20">
              <img src={previewImage} className="w-full h-auto" alt="final report" />
           </div>
-          <button onClick={() => setPreviewImage(null)} className="w-full max-w-xs py-5 bg-white text-slate-900 rounded-3xl font-black text-sm active:scale-95">返回继续编辑</button>
+          <button onClick={() => setPreviewImage(null)} className="w-full max-w-xs py-5 bg-white text-slate-900 rounded-3xl font-black text-sm active:scale-95">完成</button>
         </div>
       )}
     </div>
